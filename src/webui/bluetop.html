@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style type="text/css">
+    button[disabled] {
+      display: none;
+    }
+  </style>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  <script>
+    const serviceId = '7a61959e-611c-4346-9b27-693e3c186368';
+    const chIdMap = {
+      drum: '34033001-c804-4c95-a123-ab268eeed47e',
+      heat: 'ae79e42c-ae7e-4efa-8ed8-4210fad6652f',
+      fan: '5f717ea9-683b-4050-9923-32c7faa7d11d',
+      tray: '666271dc-66be-4819-904f-831c6e825d15',
+      dump: 'f31028e0-41b0-48ee-96ed-a1707180183b',
+      temp1: 'e584ef20-0f9c-45fa-bf13-3b30cd284042',
+      temp2: '016d723f-5ba7-4a62-ba77-4a3f6a081963',
+    };
+    const heatLevels = 10;
+    const fanLevels = 10;
+
+    let device = null;
+    const chMap = {};
+
+    function status(msg) {
+      $('#status').text(msg);
+    }
+
+    function disconnect() {
+      if (device) {
+        device.gatt.disconnect();
+        device = null;
+      }
+      $('#connect').prop('disabled', false);
+      status('Disconnected');
+    }
+
+    function fatal(err) {
+      disconnect();
+      status(err);
+      console.error(String(err), err);
+    }
+
+    function logTemp1(t1) {
+      $('#temp1').text(t1);
+    }
+
+    function logTemp2(t2) {
+      $('#temp2').text(t2);
+    }
+
+    function updateSlideValues() {
+      const heatPercent = ($('#heat').val() / heatLevels * 100).toFixed(0);
+      const fanPercent = ($('#fan').val() / fanLevels * 100).toFixed(0);
+      $('#heat-value').text(heatPercent + '%');
+      $('#fan-value').text(fanPercent + '%');
+    }
+
+    async function writeUint8(ch, val) {
+      const buf = new ArrayBuffer(1);
+      const view = new DataView(buf);
+      view.setUint8(0, Number(val) || 0);
+      await ch.writeValue(buf);
+    }
+
+    async function updateSettings() {
+      updateSlideValues();
+
+      if (device) {
+        try {
+          const heat = $('#heat').val();
+          const fan = $('#fan').val();
+          const drum = $('#drum').prop('checked');
+          const tray = $('#tray').prop('checked');
+          const dump = $('#dump').prop('checked');
+
+          status('Sending settings');
+          await writeUint8(chMap['heat'], heat);
+          await writeUint8(chMap['fan'], fan);
+          await writeUint8(chMap['drum'], drum);
+          await writeUint8(chMap['tray'], tray);
+          await writeUint8(chMap['dump'], dump);
+
+          status('Connected');
+        } catch(err) {
+          fatal(err);
+        }
+      }
+    }
+
+    async function connect() {
+      $('#connect').prop('disabled', true);
+
+      try {
+        status('Searching for device');
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{services: [serviceId]}],
+        });
+        device.addEventListener('gattserverdisconnected', () => {
+          device = null;
+          disconnect();
+        });
+
+        status('Connecting');
+        await device.gatt.connect();
+
+        status('Initializing service/characteristics');
+        const service = await device.gatt.getPrimaryService(serviceId);
+        for (const id in chIdMap) {
+          chMap[id] = await service.getCharacteristic(chIdMap[id]);
+        }
+
+        status('Requesting status notifications');
+        chMap.temp1.addEventListener('characteristicvaluechanged', (evt) => {
+          logTemp1(evt.target.value.getUint16(0, true));
+        });
+        await chMap.temp1.startNotifications();
+
+        chMap.temp2.addEventListener('characteristicvaluechanged', (evt) => {
+          logTemp2(evt.target.value.getUint16(0, true));
+        });
+        await chMap.temp2.startNotifications();
+
+        await updateSettings();
+      } catch(err) {
+        fatal(err);
+      }
+    }
+
+    $(document).ready(async () => {
+      updateSlideValues();
+      status('Ready to connect');
+
+      $('#connect').click(connect);
+      $('input').change(() => {
+        updateSlideValues();
+        updateSettings();
+      });
+      $('input[type="range"]').on('input', updateSlideValues);
+    });
+  </script>
+</head>
+<body>
+  <h1>Roast Controller</h1>
+  <p>Status: <span id="status"></span> <button id='connect'>Connect</button></p>
+  <p>Bean temperature: <span id="temp1"></span>&deg;F</p>
+  <p>Ambient temperature: <span id="temp2"></span>&deg;F</p>
+  <hr/>
+  <p><label><input type="checkbox" id="drum"> Drum rotation</label></p>
+  <p><label><input type="range" min="0" max="10" value="0" id="heat"> Heat level (<span id="heat-value"></span>)</label></p>
+  <p><label><input type="range" min="0" max="10" value="0" id="fan"> Fan level (<span id="fan-value"></span>)</label></p>
+  <p><label><input type="checkbox" id="tray"> Tray rotation</label></p>
+  <p><label><input type="checkbox" id="dump"> Dump chute</label></p>
+  <hr/>
+</body>
+</html>
