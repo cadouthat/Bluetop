@@ -1,9 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dygraph/2.1.0/dygraph.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dygraph/2.1.0/dygraph.min.css" />
   <style type="text/css">
     button[disabled] {
       display: none;
+    }
+    #graph {
+      width: 80vw;
+      height: 40vh;
     }
   </style>
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
@@ -28,9 +34,14 @@
 
     let device = null;
     const chMap = {};
+
     let curMode = undefined;
     let skipNextUpdateHeat = false;
     let skipNextUpdateFan = false;
+
+    let graph;
+    let graphData = [];
+    let graphStartMs;
 
     function status(msg) {
       $('#status').text(msg);
@@ -115,6 +126,14 @@
 
     function logTemp1(t1) {
       $('#temp1').text(t1);
+      if (curMode != Mode.STANDBY) {
+        const curMs = new Date().getTime();
+        if (!graphStartMs) {
+          graphStartMs = curMs;
+        }
+        graphData.push([curMs - graphStartMs, t1]);
+        graph.updateOptions({file: graphData});
+      }
     }
 
     function logTemp2(t2) {
@@ -228,10 +247,32 @@
       }
     }
 
+    function formatRoastTime(roastTimeMs) {
+      const totalSeconds = Math.round(roastTimeMs / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return minutes.toString().padStart(2, '0') +
+          ':' +
+          seconds.toString().padStart(2, '0');
+    }
+
     $(document).ready(async () => {
       updateSlideLabels();
       updateMode();
       status('Ready to connect');
+
+      graph = new Dygraph(
+        'graph',
+        [[0, 0]],
+        {
+          labels: ["Time (ms)", "Bean Temp (F)"],
+          axes: {
+            x: {
+              axisLabelFormatter: formatRoastTime,
+              valueFormatter: formatRoastTime,
+            },
+          },
+        });
 
       $('#connect').click(connect);
       $('#nextMode').click(startNextMode);
@@ -252,5 +293,6 @@
   <p><label><input type="range" min="0" max="10" value="0" id="heat"> Heat level (<span id="heat-value"></span>)</label></p>
   <p><label><input type="range" min="0" max="10" value="0" id="fan"> Fan level (<span id="fan-value"></span>)</label></p>
   <hr/>
+  <div id="graph"></div>
 </body>
 </html>
