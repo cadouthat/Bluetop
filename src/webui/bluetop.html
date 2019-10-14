@@ -10,19 +10,27 @@
   <script>
     const serviceId = '7a61959e-611c-4346-9b27-693e3c186368';
     const chIdMap = {
-      drum: '34033001-c804-4c95-a123-ab268eeed47e',
+      mode: '34033001-c804-4c95-a123-ab268eeed47e',
       heat: 'ae79e42c-ae7e-4efa-8ed8-4210fad6652f',
       fan: '5f717ea9-683b-4050-9923-32c7faa7d11d',
-      tray: '666271dc-66be-4819-904f-831c6e825d15',
-      dump: 'f31028e0-41b0-48ee-96ed-a1707180183b',
       temp1: 'e584ef20-0f9c-45fa-bf13-3b30cd284042',
       temp2: '016d723f-5ba7-4a62-ba77-4a3f6a081963',
+    };
+    const Mode = {
+      STANDBY: 0,
+      PREHEAT: 1,
+      ROAST: 2,
+      EJECT: 3,
+      COOL: 4,
     };
     const heatLevels = 10;
     const fanLevels = 10;
 
     let device = null;
     const chMap = {};
+    let curMode = undefined;
+    let skipNextUpdateHeat = false;
+    let skipNextUpdateFan = false;
 
     function status(msg) {
       $('#status').text(msg);
@@ -34,6 +42,8 @@
         device = null;
       }
       $('#connect').prop('disabled', false);
+      curMode = undefined;
+      updateMode();
       status('Disconnected');
     }
 
@@ -41,6 +51,66 @@
       disconnect();
       status(err);
       console.error(String(err), err);
+    }
+
+    function describeMode(mode) {
+      switch (mode) {
+        case Mode.STANDBY:
+          return 'Standby';
+        case Mode.PREHEAT:
+          return 'Preheating';
+        case Mode.ROAST:
+          return 'Roasting';
+        case Mode.EJECT:
+          return 'Ejecting';
+        case Mode.COOL:
+          return 'Cooling';
+        default:
+          return 'undefined';
+      }
+    }
+
+    function modeAfter(mode) {
+      mode++;
+      if (mode > Mode.COOL) {
+        mode = Mode.STANDBY;
+      }
+      return mode;
+    }
+
+    function updateMode() {
+      if (curMode === undefined) {
+        $('#mode').text('');
+        $('#nextMode').prop('disabled', true).text('');
+        $('#heat').prop('disabled', true);
+        $('#fan').prop('disabled', true);
+      } else {
+        $('#mode').text(describeMode(curMode));
+        $('#nextMode')
+          .prop('disabled', false)
+          .text('Start ' + describeMode(modeAfter(curMode)));
+        const inputsEnabled = (curMode == Mode.ROAST);
+        $('#heat').prop('disabled', !inputsEnabled);
+        $('#fan').prop('disabled', !inputsEnabled);
+      }
+    }
+
+    function updateHeat(val) {
+      if (skipNextUpdateHeat) {
+        skipNextUpdateHeat = false;
+        return;
+      }
+      $('#heat').val(val);
+      updateSlideLabels();
+    }
+
+    function updateFan(val) {
+      if (skipNextUpdateFan) {
+        skipNextUpdateFan = false;
+        return;
+      }
+      $('#fan').val(val);
+      updateSlideLabels();
     }
 
     function logTemp1(t1) {
@@ -51,7 +121,7 @@
       $('#temp2').text(t2);
     }
 
-    function updateSlideValues() {
+    function updateSlideLabels() {
       const heatPercent = ($('#heat').val() / heatLevels * 100).toFixed(0);
       const fanPercent = ($('#fan').val() / fanLevels * 100).toFixed(0);
       $('#heat-value').text(heatPercent + '%');
@@ -66,27 +136,41 @@
     }
 
     async function updateSettings() {
-      updateSlideValues();
+      updateSlideLabels();
 
       if (device) {
         try {
           const heat = $('#heat').val();
           const fan = $('#fan').val();
-          const drum = $('#drum').prop('checked');
-          const tray = $('#tray').prop('checked');
-          const dump = $('#dump').prop('checked');
 
           status('Sending settings');
+          // Ignore the next possibly stale notification, so updates take effect
+          skipNextUpdateHeat = true;
+          skipNextUpdateFan = true;
           await writeUint8(chMap['heat'], heat);
           await writeUint8(chMap['fan'], fan);
-          await writeUint8(chMap['drum'], drum);
-          await writeUint8(chMap['tray'], tray);
-          await writeUint8(chMap['dump'], dump);
 
           status('Connected');
         } catch(err) {
           fatal(err);
         }
+      }
+    }
+
+    async function startNextMode() {
+      if (!device || curMode === undefined) {
+        console.error('startNextMode not allowed');
+        return;
+      }
+      try {
+        status('Changing mode');
+        $('#nextMode').prop('disabled', true);
+        curMode = modeAfter(curMode);
+        await writeUint8(chMap['mode'], curMode);
+        updateMode();
+        status('Connected');
+      } catch(err) {
+        fatal(err);
       }
     }
 
@@ -113,32 +197,48 @@
         }
 
         status('Requesting status notifications');
+        chMap.mode.addEventListener('characteristicvaluechanged', (evt) => {
+          curMode = evt.target.value.getUint8(/* offset= */ 0);
+          updateMode();
+        });
+        await chMap.mode.startNotifications();
+
+        chMap.heat.addEventListener('characteristicvaluechanged', (evt) => {
+          updateHeat(evt.target.value.getUint8(/* offset= */ 0));
+        });
+        await chMap.heat.startNotifications();
+
+        chMap.fan.addEventListener('characteristicvaluechanged', (evt) => {
+          updateFan(evt.target.value.getUint8(/* offset= */ 0));
+        });
+        await chMap.fan.startNotifications();
+
         chMap.temp1.addEventListener('characteristicvaluechanged', (evt) => {
-          logTemp1(evt.target.value.getUint16(0, true));
+          logTemp1(evt.target.value.getUint16(/* offset= */ 0, /* littleEndian= */ true));
         });
         await chMap.temp1.startNotifications();
 
         chMap.temp2.addEventListener('characteristicvaluechanged', (evt) => {
-          logTemp2(evt.target.value.getUint16(0, true));
+          logTemp2(evt.target.value.getUint16(/* offset= */ 0, /* littleEndian= */ true));
         });
         await chMap.temp2.startNotifications();
-
-        await updateSettings();
+        status('Connected');
       } catch(err) {
         fatal(err);
       }
     }
 
     $(document).ready(async () => {
-      updateSlideValues();
+      updateSlideLabels();
+      updateMode();
       status('Ready to connect');
 
       $('#connect').click(connect);
+      $('#nextMode').click(startNextMode);
       $('input').change(() => {
-        updateSlideValues();
         updateSettings();
       });
-      $('input[type="range"]').on('input', updateSlideValues);
+      $('input[type="range"]').on('input', updateSlideLabels);
     });
   </script>
 </head>
@@ -148,11 +248,9 @@
   <p>Bean temperature: <span id="temp1"></span>&deg;F</p>
   <p>Ambient temperature: <span id="temp2"></span>&deg;F</p>
   <hr/>
-  <p><label><input type="checkbox" id="drum"> Drum rotation</label></p>
+  <p><label>Mode: <span id="mode"></span></label> <button id="nextMode"></button></p>
   <p><label><input type="range" min="0" max="10" value="0" id="heat"> Heat level (<span id="heat-value"></span>)</label></p>
   <p><label><input type="range" min="0" max="10" value="0" id="fan"> Fan level (<span id="fan-value"></span>)</label></p>
-  <p><label><input type="checkbox" id="tray"> Tray rotation</label></p>
-  <p><label><input type="checkbox" id="dump"> Dump chute</label></p>
   <hr/>
 </body>
 </html>
