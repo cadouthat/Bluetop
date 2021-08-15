@@ -20,5 +20,8 @@ This project was designed and tested on a Hottop KN-8828B-2K. Since it replaces 
 (below: finished prototype, including a 2nd thermocouple amplifier and a microphone+amplifier)
 ![completed prototype board](https://i.imgur.com/0s5OsB1.jpg)
 
+## Roasting UI
+![UI screenshot](./screenshot.png)
+
 ## License
 This project is licensed under the GNU General Public License - see the [LICENSE.md](LICENSE.md) file for details
