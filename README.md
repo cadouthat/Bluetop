@@ -15,13 +15,13 @@ Use at your own risk! Be aware that among other risks, **replacing the roaster c
 
 This project was designed and tested on a Hottop KN-8828B-2K. Since it replaces the entire control panel, it should work on any models that have compatible control panels, but this has not been tested.
 
-![module on breadboard](https://i.imgur.com/4GeiKjo.jpg)
+![module on breadboard](./assets/breadboard.jpg)
 
 (below: finished prototype, including a 2nd thermocouple amplifier and a microphone+amplifier)
-![completed prototype board](https://i.imgur.com/0s5OsB1.jpg)
+![completed prototype board](./assets/prototype.jpg)
 
 ## Roasting UI
-![UI screenshot](./screenshot.png)
+![UI screenshot](./assets/screenshot.png)
 
 ## License
 This project is licensed under the GNU General Public License - see the [LICENSE.md](LICENSE.md) file for details
